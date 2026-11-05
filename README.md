@@ -1,0 +1,195 @@
+# Proyectos profesionales
+
+Case studies de los proyectos empresariales en los que he trabajado en los últimos años. El código es propiedad de cada cliente y no se publica aquí; este repositorio concentra la documentación: arquitectura, decisiones técnicas, módulos a mi cargo e impacto medible.
+
+## Índice
+
+1. [SIRES — Sistema de Registro y Empaque (Agropecuaria El Sagrado)](#1-sires--sistema-de-registro-y-empaque)
+2. [SGNATY — ERP de Invernadero (Agropecuaria El Sagrado)](#2-sgnaty--erp-de-invernadero)
+3. [NAD Logística 2.0 (NAD Global)](#3-nad-logística-20)
+
+---
+
+## 1. SIRES — Sistema de Registro y Empaque
+
+**Empresa:** Agropecuaria El Sagrado · **Rol:** Desarrollador Full Stack · **Periodo:** Abril 2026 – Julio 2026 · **Estado:** En producción
+
+Plataforma híbrida web + PWA que reemplazó el flujo manual en Excel de la empacadora de espárrago orgánico con exportación a Alpine Fresh Corp. (Miami, FL), gestionando la trazabilidad completa desde la recepción en campo hasta el embarque al cliente final.
+
+### Dashboard operativo en producción
+
+![Dashboard SIRES](./screenshots/sires/01-dashboard.png)
+
+### Stack
+
+**Backend:** TypeScript · NestJS 11 · Prisma 6 · PostgreSQL 15 · class-validator · @nestjs/jwt · Passport · bcrypt · Helmet · @nestjs/throttler · Problem Details RFC 7807 · Railway (deploy)
+
+**Frontend:** Angular 21 (standalone, signals nativos, lazy loading, reactive forms) · @angular/pwa · ngx-scanner (QR) · lucide-angular · sweetalert2 · Cloudflare Pages (deploy)
+
+### Módulos y features a mi cargo (end-to-end)
+
+- **Módulo de producción** — Diseño e implementación completa (schema Prisma + backend + frontend). Entidad `OrdenProduccion` con máquina de estados (EN_PROCESO ⇄ PAUSADA → CERRADA / CANCELADA), **candado global** que impide procesar más de un rancho a la vez en toda la operación, cortes diarios con generación automática de orden complementaria y manejo de incidentes tipados (RECHAZO_PARCIAL, PERDIDA_MERCANCIA, MERCANCIA_DANIADA, CANCELACION, OTRO).
+
+- **Cálculo automático de merma** al cerrar orden (kg recibidos − kg empacados, persistidos en kg y %) y **algoritmo de prorrateo retrospectivo** que distribuye cajas, peso y merma entre lotes/tablas del rancho usando peso neto proporcional, con snapshot en tabla dedicada para trazabilidad sin recalcular.
+
+- **Edición de órdenes cerradas** — Snapshot JSON del estado previo en tabla histórica, recálculo completo de merma y re-ejecución del prorrateo, respetando reglas de inmutabilidad.
+
+- **Módulo de autenticación y RBAC** — NestJS 11 + Passport: JWT access token en memoria (15 min) + refresh token en cookie httpOnly (1 día). Endpoints de login/refresh/logout/me/change-password, hashing con bcrypt, guards globales (JwtAuthGuard, RolesGuard), decoradores custom (@Roles, @CurrentUser, @Public), 3 roles (ADMIN, OPERADOR, VISUALIZADOR) + flag `esAdminTotal` con bypass automático.
+
+- **Capa de autenticación del frontend** en Angular 21 con signals nativos — AuthService reactivo, 4 guards (authGuard, guestGuard, roleGuard, superAdminGuard), interceptor de errores con manejo automático de token expirado, **refresh concurrente deduplicado** (N requests simultáneos con token expirado disparan un solo refresh) y bootstrap automático de sesión vía `provideAppInitializer`.
+
+- **Seguridad general** — Helmet, CORS restrictivo con credentials, rate limiting con @nestjs/throttler, cookies httpOnly, access token en memoria (nunca en localStorage) y filter global de **Problem Details RFC 7807** con mapeo de errores a códigos de negocio tipados centralizados.
+
+- **Logs y auditoría** — Servicios de log del sistema (tabla `error_log`), pista de auditoría de operaciones importantes y pantalla dedicada de "Logs del sistema" restringida vía `superAdminGuard`.
+
+- **Dashboard operativo** — KPIs en tiempo real (recepciones, órdenes, kg brutos/netos/proceso/empacados, merma general, cajas embarcadas, totales en USD, saldo pendiente) y visualizaciones gráficas (barras verticales por presentación, línea con área para recepciones por día, barras horizontales para merma % por rancho).
+
+- **Reportes PDF** generados desde el backend — Resumen de merma vs. aprovechamiento por recepción, cajas producidas vs. canceladas, histórico de producciones y cajas por orden.
+
+- **PWA del sistema** — @angular/pwa (service worker + manifiesto, instalable en tablets) para uso en piso de empaque, incluyendo **lectura de códigos QR vía cámara** con ngx-scanner.
+
+### Decisiones técnicas destacadas
+
+- **Patrón modular estricto** — DTOs con class-validator, DTOs discriminados por estado destino, soft-delete obligatorio, UUIDs en todas las PKs/FKs, excepciones tipadas con code de negocio en el payload y transacciones Prisma `$transaction` para operaciones críticas.
+- **Problem Details RFC 7807** — Filter global con catálogo centralizado de business error codes, para que el frontend reaccione a códigos tipados en vez de parsear strings.
+- **Refresh concurrente deduplicado** — Para evitar N refresh calls simultáneos cuando varios requests en paralelo detectan token expirado.
+- **Access token en memoria** — Nunca en localStorage, para eliminar la superficie de ataque por XSS al robo de token.
+
+### Pantallas
+
+![Login](./screenshots/sires/04-login.png)
+*Pantalla de login*
+
+![Gestión de usuarios](./screenshots/sires/02-usuarios.png)
+*Gestión de usuarios con roles y filtros (vista superadmin)*
+
+![Producción — órdenes activas](./screenshots/sires/05-produccion-activa.png)
+*Módulo de producción — órdenes pendientes de iniciar, con lotes, pesadas y acciones*
+
+![Producción — órdenes cerradas](./screenshots/sires/03-produccion-cerradas.png)
+*Módulo de producción — vista de órdenes cerradas con merma calculada por rancho*
+
+### Impacto medible (temporada operando con SIRES)
+
+| Métrica | Valor |
+|---|---|
+| Recepciones registradas | **421** (413 órdenes cerradas) |
+| KG brutos recibidos | **413,464 kg** |
+| KG netos recibidos | **344,796 kg** |
+| Cajas embarcadas | **37,943** |
+| Facturación embarques | **$1,138,290 USD** |
+| Merma general calculada | Automática, con trazabilidad por rancho (antes manual con riesgo de error) |
+| Equipo operativo | Reducción de **~15 a ~10 personas** con mejora en tiempos de proceso |
+
+---
+
+## 2. SGNATY — ERP de Invernadero
+
+**Empresa:** Agropecuaria El Sagrado · **Rol:** Desarrollador Full Stack · **Periodo:** Agosto 2026 – Presente · **Estado:** En curso
+
+ERP que reemplaza 4 archivos Excel con problemas estructurales (celdas `#REF!`, códigos duplicados, stock sobrescrito, cálculos con constantes hardcodeadas) por una plataforma web + PWA offline para la gestión integral de un invernadero de plántula (lechuga, brócoli, apio, cebolla, chile, alcachofa) que vende a agricultores y comercializadoras.
+
+### Arquitectura
+
+**Monolito modular con 19 módulos NestJS aislados** (comunicación por EventEmitter2 / módulo shared, prohibido import directo entre services) + app Angular 21 con dos shells (desktop y PWA móvil).
+
+### Stack
+
+**Backend:** TypeScript 5.9 (strict) · NestJS 11 · Prisma 6.10 · PostgreSQL 15 (Neon serverless) · class-validator · @nestjs/jwt · Passport · bcrypt · Helmet · @nestjs/throttler · @nestjs/schedule · Problem Details RFC 7807 · date-fns + date-fns-tz · zod · Vitest
+
+**Frontend:** Angular 21.2 (standalone, **zoneless change detection**, signals nativos, computed, effect, reactive forms, control flow moderno `@if/@for/@switch`, `inject()`) · Angular Material 21 · NgRx SignalStore 21 · @angular/pwa · Dexie 4 sobre IndexedDB · lucide-angular · sweetalert2 · chart.js · exceljs · socket.io-client
+
+### Módulos y features a mi cargo (end-to-end)
+
+- **Módulo de autenticación** — Login, refresh, logout, me, change-password. JWT access en memoria + refresh en cookie httpOnly, filter global con Problem Details RFC 7807. Arquitectura con **offlineToken de 30 días** para dispositivos de campo compartidos.
+
+- **Módulo de locations** — Jerarquía estricta **Nave → Túnel → Mesa** (3 niveles tipados), validación por `locationType`, controller con filtros por nivel y padre, validación de consistencia padre-hijo y respuestas tipadas.
+
+- **Módulo de planning (Programación de siembras)** — End-to-end (backend + frontend + schema Prisma) con 4 submódulos: `plans` (plan semanal maestro), `plan-lines` (líneas ejecutables), `plan-requests` (modelo `PlantingRequest` para separar requerimiento comercial del plan operativo) y `views` (matriz semana × modalidad, timeline de ocupación, occupancy por nave/túnel/mesa, section-suggestions).
+
+- **Motor de cálculo dentro de planning** — Deriva automáticamente por cada línea: cantidad de charolas según densidad y superficie (128/200/450/878/1125/1350/1575 cavidades), fecha de siembra hacia atrás desde entrega menos días de vivero (30/35/45/60/80 según cultivo), **semana ISO 8601** (no WEEKNUM de Excel), y cantidades derivadas de consumibles (sustrato, vermiculita, perlita, trichoderma/Bactiva, emplaye) con lead times configurables por insumo.
+
+- **Modelo `PlantingRequest` y flujo de validación (Fase B)** — Separación entre requerimiento de cliente y plan ejecutable, agregados reutilizables, prefill agresivo, autogeneración de externalRef, DTOs discriminados con validaciones condicionales según estado.
+
+- **Patrón autofill de catálogos (documentado en el proyecto)** — Resuelve el autocomplete-con-creación-sobre-la-marcha de entidades maestras (cliente, variedad, rancho) con fallbacks seguros para que el formulario siga funcionando aunque el backend aún no exponga los campos nuevos.
+
+- **Capa base de Angular 21 y componentes compartidos** — Shells desktop y mobile, interceptors, guards, servicio HTTP base. Patrón: standalone components, zoneless change detection, control flow moderno, reactive forms con mensajes en español, Material 21 y lazy loading con `loadComponent`.
+
+- **Estrategia offline del sistema (co-diseñada)** — PWA móvil con @angular/pwa + Dexie sobre IndexedDB, cola custom de operaciones (descartado PowerSync), **Idempotency-Key UUID por operación generado en cliente**, modelo apéndice-first para minimizar conflictos y login offline con offlineToken de 30 días.
+
+### Reglas duras del sistema
+
+Respetadas transversalmente en todos los módulos:
+
+- `InventoryMovement` **append-only** (trigger de PostgreSQL bloquea UPDATE y DELETE)
+- Snapshots inmutables en `costing.PlantingCost`
+- Cierre de período bloqueado si `devices` reporta capturas pendientes
+- Dinero siempre en Decimal de Prisma (nunca float)
+- Fechas en UTC en BD con presentación en zona del rancho vía `date-fns-tz`
+- **Guards por permiso con decorador `@Permissions('resource.action')`** (nunca por rol)
+- Soft delete en catálogos
+
+### Estado actual
+
+- Schema Prisma modular en 18 archivos de dominio y 11 migraciones aplicadas sobre Neon (BD compartida de desarrollo)
+- Bloque A (Núcleo): auth, rbac, users, audit — entregados y validados
+- Bloque B (Base): 14 catálogos maestros con servicio genérico (SimpleCatalogService), bulk operations, catalog-resolve y cache; locations completo
+- Bloque C (Operación): planning Fase 1 + correcciones + Fase B (PlantingRequest) en despliegue; inventory submódulo seed-lots listo; plantings iniciando
+
+---
+
+## 3. NAD Logística 2.0
+
+**Empresa:** NAD Global · **Rol:** Desarrollador de Software · **Periodo:** Abril 2025 – Febrero 2026 (10 meses) · **Modalidad:** Remoto · **Formato:** Estadía profesional (4 meses) + extensión por desempeño (6 meses)
+
+Desarrollo end-to-end en el sistema NAD Logística 2.0, plataforma empresarial para gestión de operaciones logísticas y aduanales de NAD Global (empresa líder en despacho aduanero con presencia en 14 ubicaciones a nivel nacional), trabajando tanto en el mantenimiento del stack legacy (NAD Logística 1.0, base de ~15 años) como en la migración hacia una nueva arquitectura basada en APIs.
+
+### Stack
+
+**Nuevo:** C# · .NET (ASP.NET Core Minimal APIs) · Entity Framework Core · Clean Architecture (Ports & Adapters) · FluentValidation · Result Pattern · SQL Server (Stored Procedures, vistas, LINQ, `FromSqlRaw`)
+
+**Legacy:** VB.NET · ASP.NET WebForms · Handlers `.ashx` · DLLs compiladas · jQuery · Bootstrap · DataTables · Select2 · AJAX
+
+**Herramientas:** Git · Jira · Visual Studio · Postman · Swagger · VPN · SCRUM
+
+### Features a mi cargo
+
+- **Más de 15 Historias de Usuario** completas end-to-end (frontend + backend + BD) para los módulos **Aéreo, Catálogos, Usuarios, Configuración y Gestiones**, dentro de un equipo de 5 desarrolladores liderado por un desarrollador senior.
+
+- **APIs REST en .NET con Minimal APIs** siguiendo **Clean Architecture (Ports & Adapters)** con separación estricta en 15 proyectos (Entities, BusinessObjects, Core, DataSources, IoC, Encryption, SmtpGateway, etc.), Entity Framework Core sobre SQL Server, FluentValidation, Result Pattern e inyección de dependencias con `AddScoped`, consumidas por la aplicación web y la aplicación móvil de captura de embarques.
+
+- **Pantallas web en ASP.NET WebForms (VB.NET)** con jQuery, Bootstrap, DataTables, Select2 y AJAX, implementando flujos complejos como el **módulo de Revisión de Guías con discrepancias en previos**, incluyendo monitor con filtros dinámicos, galería de fotografías en modal, y acciones de actualización/eliminación/unión de guías duplicadas.
+
+- **Alta y modificación de usuarios con generación automática de contraseñas aleatorias seguras** (10 caracteres, mezcla criptográfica con `RNGCryptoServiceProvider`), encriptación **SHA256**, envío automático de credenciales por correo (**SMTP**) y gestión de **2FA** (aplicar y restablecer).
+
+- **Migración del flujo de recuperación de contraseña** desde la arquitectura legacy en 3 capas hacia la nueva arquitectura basada en APIs REST, con validación por usuario + correo, generación de contraseña aleatoria, actualización encriptada en BD y notificación por correo.
+
+- **Pantalla de administración de permisos del menú (NL 2.0)** con modal de pestañas para permisos actuales/disponibles, permitiendo asignación múltiple usuario-permiso de forma flexible (uno a muchos y muchos a muchos), reemplazando el esquema predefinido anterior.
+
+- **Stored Procedures en SQL Server**, trabajo con vistas y queries directas con **LINQ** (incluyendo `FromSqlRaw`) sobre múltiples bases de datos del ecosistema NAD, asegurando integridad en operaciones transaccionales.
+
+- **Coexistencia de dos backends** — Mantenimiento sobre el stack legacy (VB.NET / ASP.NET WebForms + Handlers `.ashx`, arquitectura en 3 capas con DLLs compiladas) y desarrollo nuevo bajo Clean Architecture en .NET, apoyando la transición tecnológica del producto.
+
+- **Endpoints reutilizables consumidos por otros desarrolladores del equipo** (web y móvil), documentados con contratos Request/Response con payload de ejemplo en Swagger y respuestas estandarizadas con el patrón `Result<T, TError>`.
+
+- **Metodología SCRUM** con sprints de 2 semanas en modalidad remota, participación activa en Sprint Planning, Daily Scrum, **refinamientos de Historias de Usuario con el Product Owner** (proponiendo soluciones técnicas y cuestionando requerimientos para resolver discrepancias antes del desarrollo), estimación por Story Points, revisiones y retrospectivas, usando Jira como herramienta de gestión.
+
+### Pantallas
+
+![Revisión de guías](./screenshots/nad/02-revision-guias.jpg)
+*Módulo de Revisión de Guías con filtros dinámicos y tabla de hallazgos*
+
+![Galería de previos](./screenshots/nad/01-galeria-previos.jpg)
+*Modal de galería de fotografías del previo, con filtros por tipo de evidencia (Guía / Daños Generales)*
+
+### Resultados
+
+Funcionalidades **validadas por el equipo de QA y liberadas a producción**, incluyendo el monitor de guías con discrepancias, actualización/eliminación/unión de previos, migración de recuperación de contraseña y módulo de permisos del menú.
+
+---
+
+## Contacto
+
+- **Email:** oropezacristian40@gmail.com
+- **LinkedIn:** [cristian-oropeza-yepiz](https://linkedin.com/in/cristian-oropeza-yepiz)
+- **GitHub:** [Cristian-Oropeza](https://github.com/Cristian-Oropeza)
